@@ -1,1 +1,111 @@
 
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>Sine & Cosine 3D Simulation</title>
+    <style>
+        body { margin: 0; background-color: #111; overflow: hidden; font-family: sans-serif; }
+        #info { position: absolute; top: 10px; width: 100%; text-align: center; color: white; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="info">3D Sine (Yellow) & Cosine (Blue) Visualization</div>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 1. Setup Scene ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        camera.position.set(5, 5, 10);
+        controls.update();
+
+        // --- 2. Create Unit Circle ---
+        const circleGeom = new THREE.RingGeometry(1.95, 2, 64);
+        const circleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const circle = new THREE.Mesh(circleGeom, circleMat);
+        circle.rotation.y = Math.PI / 2; // วางแนวตั้งตามภาพ
+        scene.add(circle);
+
+        // --- 3. Points and Waves ---
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        scene.add(dot);
+
+        const sinePoints = [];
+        const cosPoints = [];
+        const maxPoints = 500;
+        
+        const sineLineGeom = new THREE.BufferGeometry();
+        const sineLineMat = new THREE.LineBasicMaterial({ color: 0xffff00 }); // สีเหลือง
+        const sineLine = new THREE.Line(sineLineGeom, sineLineMat);
+        scene.add(sineLine);
+
+        const cosLineGeom = new THREE.BufferGeometry();
+        const cosLineMat = new THREE.LineBasicMaterial({ color: 0x00ffff }); // สีฟ้า
+        const cosLine = new THREE.Line(cosLineGeom, cosLineMat);
+        scene.add(cosLine);
+
+        // แกนอ้างอิง
+        const grid = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+        grid.position.y = -2;
+        scene.add(grid);
+
+        // --- 4. Animation Loop ---
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.03;
+
+            // คำนวณตำแหน่งบนวงกลม
+            const x = Math.cos(time) * 2;
+            const y = Math.sin(time) * 2;
+            dot.position.set(0, y, x);
+
+            // เก็บค่าสำหรับวาดคลื่น (ถอยหลังไปตามแกน X ของจอ)
+            sinePoints.unshift(new THREE.Vector3(0, y, x)); // Sine วิ่งออกไปด้านหลัง
+            cosPoints.unshift(new THREE.Vector3(0, -2, x)); // Cosine วิ่งไปที่พื้น
+
+            // เลื่อนจุดในอดีตออกไปตามแนวแกน (Simulation การไหล)
+            for(let i=0; i < sinePoints.length; i++) {
+                sinePoints[i].x = i * 0.05; 
+                cosPoints[i].x = i * 0.05;
+            }
+
+            if (sinePoints.length > maxPoints) {
+                sinePoints.pop();
+                cosPoints.pop();
+            }
+
+            // Update Geometry
+            sineLineGeom.setFromPoints(sinePoints);
+            cosLineGeom.setFromPoints(cosPoints);
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
