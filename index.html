@@ -4,12 +4,55 @@
     <meta charset="UTF-8">
     <title>Accurate 3D Trig Simulation</title>
     <style>
-        body { margin: 0; background-color: #1a1a1a; overflow: hidden; font-family: sans-serif; }
-        #info { position: absolute; top: 15px; width: 100%; text-align: center; color: white; pointer-events: none; font-size: 18px; letter-spacing: 1px;}
+        body { margin: 0; background-color: #0f111a; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* สไตล์สำหรับกล่อง UI แบบกระจกฝ้า */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px 25px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            pointer-events: auto; /* ให้คลิกปุ่มได้ */
+        }
+
+        h1 { margin: 0 0 10px 0; font-size: 28px; font-weight: 600; letter-spacing: 1px; }
+        .legend { font-size: 15px; color: #cccccc; margin-bottom: 5px; display: flex; align-items: center; }
+        
+        /* จุดสีบอกความหมาย */
+        .color-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .dot-yellow { background-color: #ffd700; box-shadow: 0 0 8px #ffd700; }
+        .dot-blue { background-color: #00bfff; box-shadow: 0 0 8px #00bfff; }
+
+        /* สไตล์ปุ่มกด */
+        #play-btn {
+            margin-top: 15px;
+            padding: 10px 20px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #play-btn:hover { background: rgba(255, 255, 255, 0.2); }
     </style>
 </head>
 <body>
-    <div id="info">f(x) = Sin(x) [Yellow] &nbsp; | &nbsp; f(x) = Cos(x) [Blue]</div>
+    <div id="ui-panel">
+        <h1>แบบจำลองกราฟ</h1>
+        <div class="legend"><span class="color-dot dot-yellow"></span> f(x) = Sin(x)</div>
+        <div class="legend"><span class="color-dot dot-blue"></span> f(x) = Cos(x)</div>
+        <button id="play-btn">⏸ Pause Simulation</button>
+    </div>
     
     <script type="importmap">
         {
@@ -26,23 +69,26 @@
 
         // --- 1. Setup ---
         const scene = new THREE.Scene();
+        // เพิ่มหมอก (Fog) บางๆ ให้ปลายกราฟดูค่อยๆ กลืนไปกับพื้นหลัง
+        scene.fog = new THREE.Fog(0x0f111a, 10, 25);
+
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
-        // ตั้งกล้องให้มองเฉียงๆ เหมือนในรูป
-        camera.position.set(8, 5, 8);
-        controls.target.set(3, -1, -1);
+        camera.position.set(10, 6, 10);
+        controls.target.set(4, -1, -1);
+        controls.enableDamping = true; // ทำให้การหมุนกล้องสมูทขึ้น
         controls.update();
 
-        const R = 2; // รัศมีวงกลม
+        const R = 2;
 
-        // --- 2. วาดแกนอ้างอิงและวงกลม ---
-        const materialWhite = new THREE.LineBasicMaterial({ color: 0xffffff });
+        // --- 2. วาดแกนอ้างอิง วงกลม และตารางพื้น ---
+        const materialWhite = new THREE.LineBasicMaterial({ color: 0xaaaaaa });
         
-        // วงกลมบนระนาบ YZ
+        // วงกลม
         const circleGeom = new THREE.BufferGeometry();
         const circlePts = [];
         for(let i=0; i<=64; i++) {
@@ -52,106 +98,117 @@
         circleGeom.setFromPoints(circlePts);
         scene.add(new THREE.Line(circleGeom, materialWhite));
 
-        // แกนกากบาทในวงกลม
+        // แกนกากบาท
         const crossGeom = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, -R*1.2, 0), new THREE.Vector3(0, R*1.2, 0),
             new THREE.Vector3(0, 0, -R*1.2), new THREE.Vector3(0, 0, R*1.2)
         ]);
         scene.add(new THREE.LineSegments(crossGeom, materialWhite));
 
-        // แกน X สำหรับกราฟ Sine (แนวนอนบนกำแพง) และ Cosine (แนวนอนบนพื้น)
+        // แกนหลัก X
         const axisGeom = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, -R), new THREE.Vector3(12, 0, -R), // แกน Sine
-            new THREE.Vector3(0, -R, 0), new THREE.Vector3(12, -R, 0)  // แกน Cosine
+            new THREE.Vector3(0, 0, -R), new THREE.Vector3(15, 0, -R),
+            new THREE.Vector3(0, -R, 0), new THREE.Vector3(15, -R, 0)
         ]);
         scene.add(new THREE.LineSegments(axisGeom, materialWhite));
 
+        // เพิ่มตาราง (Grid) ที่พื้นให้ดูมีมิติ
+        const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+        gridHelper.position.set(5, -R, 0); // วางไว้ที่ระดับของกราฟ Cosine
+        scene.add(gridHelper);
+
         // --- 3. เตรียม Data สำหรับกราฟคลื่น ---
-        const NUM_PTS = 150;
-        const LENGTH = 10;
+        const NUM_PTS = 200; // เพิ่มความละเอียดของเส้น
+        const LENGTH = 15;
         const dx = LENGTH / NUM_PTS;
 
-        // Geometries
         const sineWaveGeom = new THREE.BufferGeometry();
         const cosWaveGeom = new THREE.BufferGeometry();
         const sinePillarsGeom = new THREE.BufferGeometry();
         const cosPillarsGeom = new THREE.BufferGeometry();
 
-        // Arrays สำหรับเก็บตำแหน่ง (X, Y, Z)
         const sinePts = new Float32Array(NUM_PTS * 3);
         const cosPts = new Float32Array(NUM_PTS * 3);
-        const sinePillars = new Float32Array(NUM_PTS * 6); // 2 จุดต่อ 1 เส้น
+        const sinePillars = new Float32Array(NUM_PTS * 6);
         const cosPillars = new Float32Array(NUM_PTS * 6);
 
-        // Attributes
         sineWaveGeom.setAttribute('position', new THREE.BufferAttribute(sinePts, 3));
         cosWaveGeom.setAttribute('position', new THREE.BufferAttribute(cosPts, 3));
         sinePillarsGeom.setAttribute('position', new THREE.BufferAttribute(sinePillars, 3));
         cosPillarsGeom.setAttribute('position', new THREE.BufferAttribute(cosPillars, 3));
 
-        // Materials
-        const matSine = new THREE.LineBasicMaterial({ color: 0xffd700 }); // เหลือง
-        const matCos = new THREE.LineBasicMaterial({ color: 0x00bfff });  // ฟ้า
+        // วัสดุเส้นหลัก (สว่าง)
+        const matSine = new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 2 }); 
+        const matCos = new THREE.LineBasicMaterial({ color: 0x00bfff, linewidth: 2 });  
 
-        // สร้าง Mesh
+        // วัสดุซี่กรง (โปร่งแสงให้ดูเป็นมิติหลัง)
+        const matSinePillar = new THREE.LineBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.25 });
+        const matCosPillar = new THREE.LineBasicMaterial({ color: 0x00bfff, transparent: true, opacity: 0.25 });
+
         scene.add(new THREE.Line(sineWaveGeom, matSine));
         scene.add(new THREE.Line(cosWaveGeom, matCos));
-        scene.add(new THREE.LineSegments(sinePillarsGeom, matSine));
-        scene.add(new THREE.LineSegments(cosPillarsGeom, matCos));
+        scene.add(new THREE.LineSegments(sinePillarsGeom, matSinePillar));
+        scene.add(new THREE.LineSegments(cosPillarsGeom, matCosPillar));
 
-        // จุดที่วิ่งบนวงกลมและเส้นฉายภาพ
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xffffff}));
+        // จุดศูนย์กลาง (เปล่งแสงนิดๆ)
+        const dot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.12), 
+            new THREE.MeshBasicMaterial({color: 0xffffff})
+        );
         scene.add(dot);
         
         const projectionGeom = new THREE.BufferGeometry();
-        const projectionMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+        const projectionMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
         const projectionLines = new THREE.LineSegments(projectionGeom, projectionMat);
         scene.add(projectionLines);
 
-        // --- 4. Animation Loop ---
+        // --- 4. Animation Control & Loop ---
         let time = 0;
+        let isPlaying = true;
+
+        // จัดการปุ่ม Play/Pause
+        const playBtn = document.getElementById('play-btn');
+        playBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            playBtn.innerHTML = isPlaying ? "⏸ Pause Simulation" : "▶️ Play Simulation";
+        });
+
         function animate() {
             requestAnimationFrame(animate);
-            time += 0.02; // ความเร็ว
+            controls.update(); // จำเป็นสำหรับการตั้ง enableDamping
 
-            // คำนวณคลื่นทั้งหมด
-            for (let i = 0; i < NUM_PTS; i++) {
-                let x = i * dx;
-                let t = time - x * 1.5; // ย้อนเวลาตามระยะ X เพื่อให้คลื่นไหลไปข้างหน้า
-                let y = R * Math.sin(t);
-                let z = R * Math.cos(t);
-                
-                // Sine (กำแพง Z = -R)
-                sinePts[i*3] = x; sinePts[i*3+1] = y; sinePts[i*3+2] = -R;
-                
-                // ซี่กรง Sine (จากแกนไปหาคลื่น)
-                sinePillars[i*6] = x; sinePillars[i*6+1] = 0; sinePillars[i*6+2] = -R;
-                sinePillars[i*6+3] = x; sinePillars[i*6+4] = y; sinePillars[i*6+5] = -R;
-                
-                // Cosine (พื้น Y = -R)
-                cosPts[i*3] = x; cosPts[i*3+1] = -R; cosPts[i*3+2] = z;
-                
-                // ซี่กรง Cosine (จากแกนไปหาคลื่น)
-                cosPillars[i*6] = x; cosPillars[i*6+1] = -R; cosPillars[i*6+2] = 0;
-                cosPillars[i*6+3] = x; cosPillars[i*6+4] = -R; cosPillars[i*6+5] = z;
+            if (isPlaying) {
+                time += 0.02;
+
+                for (let i = 0; i < NUM_PTS; i++) {
+                    let x = i * dx;
+                    let t = time - x * 1.5; 
+                    let y = R * Math.sin(t);
+                    let z = R * Math.cos(t);
+                    
+                    sinePts[i*3] = x; sinePts[i*3+1] = y; sinePts[i*3+2] = -R;
+                    sinePillars[i*6] = x; sinePillars[i*6+1] = 0; sinePillars[i*6+2] = -R;
+                    sinePillars[i*6+3] = x; sinePillars[i*6+4] = y; sinePillars[i*6+5] = -R;
+                    
+                    cosPts[i*3] = x; cosPts[i*3+1] = -R; cosPts[i*3+2] = z;
+                    cosPillars[i*6] = x; cosPillars[i*6+1] = -R; cosPillars[i*6+2] = 0;
+                    cosPillars[i*6+3] = x; cosPillars[i*6+4] = -R; cosPillars[i*6+5] = z;
+                }
+
+                sineWaveGeom.attributes.position.needsUpdate = true;
+                cosWaveGeom.attributes.position.needsUpdate = true;
+                sinePillarsGeom.attributes.position.needsUpdate = true;
+                cosPillarsGeom.attributes.position.needsUpdate = true;
+
+                let current_y = R * Math.sin(time);
+                let current_z = R * Math.cos(time);
+                dot.position.set(0, current_y, current_z);
+
+                projectionGeom.setFromPoints([
+                    new THREE.Vector3(0, current_y, current_z), new THREE.Vector3(0, current_y, -R), 
+                    new THREE.Vector3(0, current_y, current_z), new THREE.Vector3(0, -R, current_z)  
+                ]);
             }
-
-            // แจ้ง Three.js ว่าข้อมูลมีการอัปเดต
-            sineWaveGeom.attributes.position.needsUpdate = true;
-            cosWaveGeom.attributes.position.needsUpdate = true;
-            sinePillarsGeom.attributes.position.needsUpdate = true;
-            cosPillarsGeom.attributes.position.needsUpdate = true;
-
-            // อัปเดตจุดบนวงกลม
-            let current_y = R * Math.sin(time);
-            let current_z = R * Math.cos(time);
-            dot.position.set(0, current_y, current_z);
-
-            // อัปเดตเส้นฉายภาพจากวงกลมไปหากราฟ
-            projectionGeom.setFromPoints([
-                new THREE.Vector3(0, current_y, current_z), new THREE.Vector3(0, current_y, -R), // เส้นโยงไป Sine
-                new THREE.Vector3(0, current_y, current_z), new THREE.Vector3(0, -R, current_z)  // เส้นโยงไป Cosine
-            ]);
 
             renderer.render(scene, camera);
         }
