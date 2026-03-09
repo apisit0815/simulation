@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>แบบจำลองวิถีโค้งพาราโบลา - บาสเกตบอล</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Sarabun', sans-serif; }
+        canvas { touch-action: none; }
+    </style>
+    <!-- นำเข้าฟอนต์ภาษาไทย -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center py-8 px-4">
+
+    <div class="max-w-4xl w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-blue-600 p-6 text-white text-center">
+            <h1 class="text-2xl font-semibold">ฟิสิกส์ของการชู้ตบาสเกตบอล</h1>
+            <p class="text-blue-100 mt-2 text-sm">จำลองการเคลื่อนที่แบบโพรเจกไทล์ (Projectile Motion) ตามสมการคณิตศาสตร์</p>
+        </div>
+
+        <div class="p-6">
+            <!-- ส่วนแสดงผล Canvas -->
+            <div class="relative w-full aspect-video bg-slate-50 border border-slate-200 rounded-lg overflow-hidden mb-6">
+                <canvas id="simulationCanvas" class="w-full h-full block"></canvas>
+            </div>
+
+            <!-- แผงควบคุม (Controls) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50 p-6 rounded-xl border border-slate-200">
+                
+                <!-- ตัวปรับมุม -->
+                <div class="flex flex-col space-y-4">
+                    <label for="angleSlider" class="text-slate-700 font-medium flex justify-between">
+                        <span>มุมปล่อยลูก (Release Angle): <span id="angleValue" class="text-blue-600 font-bold">50</span>°</span>
+                    </label>
+                    <input type="range" id="angleSlider" min="30" max="80" step="1" value="50" class="w-full h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                    <p class="text-xs text-slate-500">ปรับมุมเพื่อดูวิถีโค้งที่เปลี่ยนไป ระบบจะคำนวณความเร็วที่ต้องใช้ให้พอดีห่วงอัตโนมัติ</p>
+                </div>
+
+                <!-- แสดงผลการคำนวณ -->
+                <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">ผลการคำนวณทางฟิสิกส์</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs text-slate-400">ความเร็วต้น ($v_0$)</p>
+                            <p class="text-xl font-bold text-slate-800"><span id="velocityValue">0.00</span> <span class="text-sm font-normal text-slate-500">m/s</span></p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">จุดสูงสุด (Max Height)</p>
+                            <p class="text-xl font-bold text-slate-800"><span id="maxHeightValue">0.00</span> <span class="text-sm font-normal text-slate-500">m</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- คำอธิบายสมการ -->
+            <div class="mt-8 p-4 bg-blue-50 text-blue-800 rounded-lg text-sm leading-relaxed">
+                <strong>หลักการทางคณิตศาสตร์:</strong><br>
+                ระบบจำลองนี้ใช้สมการวิถี <code>y = y₀ + x·tan(θ) - (g·x²) / (2·v₀²·cos²(θ))</code> <br>
+                กำหนดให้: จุดปล่อย $y₀ = 2m$, เป้าหมาย (กึ่งกลางห่วง) $x_f = 4.25m, y_f = 3m$, และความเร่งโน้มถ่วง $g = 9.81 m/s²$
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ค่าคงที่และตัวแปรทางฟิสิกส์ ---
+        const g = 9.81;       // ความเร่งเนื่องจากแรงโน้มถ่วง (m/s^2)
+        const x_0 = 0;        // ตำแหน่งเริ่มต้นแนวราบ (m)
+        const y_0 = 2.0;      // ความสูงเริ่มต้นที่ปล่อยลูก (m)
+        const x_f = 4.25;     // ระยะห่างกึ่งกลางห่วง (4m + 0.25m)
+        const y_f = 3.0;      // ความสูงของห่วง (m)
+        const hoopDiameter = 0.5; // เส้นผ่านศูนย์กลางห่วง (m)
+        
+        // --- ตัวแปรสำหรับ Canvas ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let scale = 100;      // 1 เมตร = 100 พิกเซล
+        let originX, originY; // พิกัดกำเนิดบนหน้าจอ
+
+        // --- ตัวแปรควบคุม Animation ---
+        let currentAngle = 50;
+        let currentVelocity = 0;
+        let animationTime = 0;
+        let isAnimating = true;
+        let animationReq;
+
+        // UI Elements
+        const angleSlider = document.getElementById('angleSlider');
+        const angleValueDisplay = document.getElementById('angleValue');
+        const velocityValueDisplay = document.getElementById('velocityValue');
+        const maxHeightValueDisplay = document.getElementById('maxHeightValue');
+
+        // ฟังก์ชันคำนวณความเร็วต้น (v0) ที่ต้องการเพื่อให้เข้าห่วงพอดี
+        function calculateRequiredVelocity(angleDeg) {
+            const theta = angleDeg * (Math.PI / 180); // แปลงเป็นเรเดียน
+            const tanTh = Math.tan(theta);
+            const cosTh = Math.cos(theta);
+            
+            // จากสมการ: y_f = y_0 + x_f*tan(theta) - (g*x_f^2) / (2 * v_0^2 * cos^2(theta))
+            // แก้สมการหา v_0^2
+            const term = x_f * tanTh - (y_f - y_0);
+            if (term <= 0) return 0; // เป็นไปไม่ได้ในทางฟิสิกส์ (มุมต่ำเกินไปที่จะถึงความสูงที่กำหนด)
+            
+            const v0_squared = (g * x_f * x_f) / (2 * cosTh * cosTh * term);
+            return Math.sqrt(v0_squared);
+        }
+
+        // ตั้งค่าขนาด Canvas ให้คมชัด
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            // รองรับ High DPI (Retina displays)
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            width = rect.width;
+            height = rect.height;
+            
+            // ปรับ Scale และจุด Origin ตามขนาดจอ
+            scale = width / 7; // ให้แสดงผลความกว้างประมาณ 7 เมตรเต็มจอ
+            originX = width * 0.15; // ขยับจุด (0,0) มาทางขวา 15% ของจอ
+            originY = height * 0.85; // ขยับจุด (0,0) ลงมา 85% ของจอ
+        }
+
+        // แปลงพิกัดฟิสิกส์ (เมตร) เป็นพิกัดหน้าจอ (พิกเซล)
+        function toScreen(x, y) {
+            return {
+                x: originX + (x * scale),
+                y: originY - (y * scale) // แกน Y ของจอคว่ำลง จึงต้องลบ
+            };
+        }
+
+        // ฟังก์ชันวาดองค์ประกอบพื้นฐาน
+        function drawEnvironment() {
+            ctx.clearRect(0, 0, width, height);
+
+            // วาดเส้นกริด (Grid) อ่อนๆ
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let i = 0; i <= 6; i++) {
+                // เส้นตั้ง
+                let px = toScreen(i, 0).x;
+                ctx.moveTo(px, 0); ctx.lineTo(px, height);
+            }
+            for(let i = 0; i <= 5; i++) {
+                // เส้นนอน
+                let py = toScreen(0, i).y;
+                ctx.moveTo(0, py); ctx.lineTo(width, py);
+            }
+            ctx.stroke();
+
+            // วาดพื้นดิน
+            const groundP1 = toScreen(-1, 0);
+            const groundP2 = toScreen(6, 0);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(groundP1.x, groundP1.y);
+            ctx.lineTo(groundP2.x, groundP2.y);
+            ctx.stroke();
+
+            // วาดคน (Stickman)
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 2;
+            const pHead = toScreen(0, y_0 - 0.2); // หัว
+            const pNeck = toScreen(0, y_0 - 0.4);
+            const pBody = toScreen(0, y_0 - 1.2);
+            const pLegL = toScreen(-0.1, 0);
+            const pLegR = toScreen(0.1, 0);
+            const pArm = toScreen(-0.2, y_0 - 0.7);
+            const pHand = toScreen(0.1, y_0); // มือถือลูกบาส
+
+            ctx.beginPath();
+            ctx.arc(pHead.x, pHead.y, 0.2 * scale, 0, Math.PI * 2); // หัว
+            ctx.moveTo(pNeck.x, pNeck.y); ctx.lineTo(pBody.x, pBody.y); // ลำตัว
+            ctx.moveTo(pBody.x, pBody.y); ctx.lineTo(pLegL.x, pLegL.y); // ขาซ้าย
+            ctx.moveTo(pBody.x, pBody.y); ctx.lineTo(pLegR.x, pLegR.y); // ขาขวา
+            ctx.moveTo(pNeck.x, pNeck.y); ctx.lineTo(pArm.x, pArm.y); ctx.lineTo(pHand.x, pHand.y); // แขน
+            ctx.stroke();
+
+            // วาดแป้นบาสและห่วง
+            const poleFront = x_f + (hoopDiameter/2); // ตำแหน่งเสาคือขอบหลังของห่วง (สมมติ)
+            const pPoleBottom = toScreen(poleFront, 0);
+            const pPoleTop = toScreen(poleFront, y_f + 0.5);
+            const pBackboardT = toScreen(poleFront, y_f + 0.6);
+            const pBackboardB = toScreen(poleFront, y_f - 0.4);
+            
+            // เสาและแป้น
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(pPoleBottom.x, pPoleBottom.y); ctx.lineTo(pPoleTop.x, pPoleTop.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pBackboardT.x, pBackboardT.y); ctx.lineTo(pBackboardB.x, pBackboardB.y);
+            ctx.stroke();
+
+            // ห่วงบาส
+            const pRingBack = toScreen(poleFront, y_f);
+            const pRingFront = toScreen(poleFront - hoopDiameter, y_f);
+            ctx.strokeStyle = '#ef4444'; // สีแดง
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(pRingBack.x, pRingBack.y); ctx.lineTo(pRingFront.x, pRingFront.y);
+            ctx.stroke();
+
+            // วาดตาข่าย (คร่าวๆ)
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(pRingFront.x, pRingFront.y); ctx.lineTo(toScreen(poleFront - 0.1, y_f - 0.4).x, toScreen(poleFront - 0.1, y_f - 0.4).y);
+            ctx.moveTo(pRingBack.x, pRingBack.y); ctx.lineTo(toScreen(poleFront - 0.4, y_f - 0.4).x, toScreen(poleFront - 0.4, y_f - 0.4).y);
+            ctx.stroke();
+
+            // วาดเส้นบอกระยะ (Dimensions)
+            drawDimension(0, 0, x_f - (hoopDiameter/2), 0, "4 m", -0.4); // ระยะแนวราบถึงหน้าห่วง
+            drawDimension(poleFront, 0, poleFront, y_f, "3 m", 0.3); // ความสูงห่วง
+            drawDimension(0, 0, 0, y_0, "2 m", -0.4); // ความสูงปล่อยลูก
+            drawDimension(poleFront - hoopDiameter, y_f + 0.2, poleFront, y_f + 0.2, "0.5m", 0, true); // ขนาดห่วง
+        }
+
+        // ฟังก์ชันช่วยวาดเส้นบอกระยะ (ลูกศร)
+        function drawDimension(x1, y1, x2, y2, text, offset, isTop = false) {
+            let p1 = toScreen(x1, y1);
+            let p2 = toScreen(x2, y2);
+            
+            // ขยับเส้นบอกระยะ
+            if(x1 === x2) { // เส้นแนวตั้ง
+                p1.x += offset * scale; p2.x += offset * scale;
+            } else { // เส้นแนวนอน
+                p1.y += offset * scale; p2.y += offset * scale;
+            }
+
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 1;
+            ctx.fillStyle = '#64748b';
+            ctx.font = "12px Sarabun";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+
+            // หัวลูกศร (วาดง่ายๆ เป็นวงกลมเล็กๆ หรือเส้นตัด)
+            ctx.fillRect(p1.x - 2, p1.y - 2, 4, 4);
+            ctx.fillRect(p2.x - 2, p2.y - 2, 4, 4);
+
+            // ข้อความ
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            ctx.fillStyle = '#f8fafc'; // พื้นหลังข้อความ
+            
+            if(x1 === x2) { // แนวตั้ง
+                ctx.fillRect(midX - 10, midY - 10, 20, 20);
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(text, midX, midY);
+            } else { // แนวนอน
+                ctx.fillRect(midX - 15, midY - 10, 30, 20);
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(text, midX, midY);
+            }
+        }
+
+        // วาดเส้นวิถีโค้งพาราโบลาแบบเต็มเส้น
+        function drawTrajectory(v0, angleDeg) {
+            if(v0 <= 0) return;
+            const theta = angleDeg * (Math.PI / 180);
+            
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)'; // สีฟ้าจางๆ
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]); // เส้นประ
+            ctx.beginPath();
+            
+            let pStart = toScreen(x_0, y_0);
+            ctx.moveTo(pStart.x, pStart.y);
+
+            // คำนวณไปเรื่อยๆ จนกว่าจะตกถึงพื้น
+            for(let t = 0; t <= 3; t += 0.05) {
+                let x = x_0 + (v0 * Math.cos(theta) * t);
+                let y = y_0 + (v0 * Math.sin(theta) * t) - (0.5 * g * t * t);
+                if (y < 0) break;
+                
+                let p = toScreen(x, y);
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]); // คืนค่าเส้นปกติ
+        }
+
+        // Main Animation Loop
+        function animate() {
+            if(!isAnimating) return;
+
+            drawEnvironment();
+            drawTrajectory(currentVelocity, currentAngle);
+
+            // คำนวณตำแหน่งลูกบาสปัจจุบัน
+            const theta = currentAngle * (Math.PI / 180);
+            let currentX = x_0 + (currentVelocity * Math.cos(theta) * animationTime);
+            let currentY = y_0 + (currentVelocity * Math.sin(theta) * animationTime) - (0.5 * g * animationTime * animationTime);
+
+            // วาดลูกบาส (ทรงกลมสีส้ม)
+            let pBall = toScreen(currentX, currentY);
+            ctx.beginPath();
+            ctx.arc(pBall.x, pBall.y, 0.12 * scale, 0, Math.PI * 2); // รัศมีลูกบาสประมาณ 12 ซม.
+            ctx.fillStyle = '#ea580c';
+            ctx.fill();
+            ctx.strokeStyle = '#9a3412';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // เพิ่มเวลา
+            animationTime += 0.025; // ความเร็วของอนิเมชัน
+
+            // ถ้าระยะเกิน 6 เมตร หรือตกลงพื้น ให้เริ่มใหม่
+            if (currentY < -0.5 || currentX > 6) {
+                animationTime = 0; // Reset loop
+            }
+
+            animationReq = requestAnimationFrame(animate);
+        }
+
+        // ฟังก์ชันอัปเดตค่าเมื่อผู้ใช้เลื่อน Slider
+        function updateSimulation() {
+            currentAngle = parseFloat(angleSlider.value);
+            angleValueDisplay.innerText = currentAngle;
+            
+            currentVelocity = calculateRequiredVelocity(currentAngle);
+            velocityValueDisplay.innerText = currentVelocity.toFixed(2);
+
+            // คำนวณจุดสูงสุด (Max Height) = y0 + (v0^2 * sin^2(theta)) / (2g)
+            const theta = currentAngle * (Math.PI / 180);
+            let maxHeight = y_0 + (Math.pow(currentVelocity * Math.sin(theta), 2) / (2 * g));
+            maxHeightValueDisplay.innerText = maxHeight.toFixed(2);
+
+            // รีเซ็ตอนิเมชันให้เริ่มปล่อยลูกใหม่
+            animationTime = 0;
+        }
+
+        // Event Listeners
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            updateSimulation(); // วาดใหม่
+        });
+
+        angleSlider.addEventListener('input', () => {
+            updateSimulation();
+        });
+
+        // Initialize
+        window.onload = () => {
+            resizeCanvas();
+            updateSimulation();
+            animate();
+        };
+
+    </script>
+</body>
+</html>
