@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Pendulum Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Ensure canvases don't cause layout shifts */
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+        /* Custom scrollbar for a polished look if needed */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white p-6 shadow-md">
+        <div class="max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold">Interactive Physics: Simple Pendulum</h1>
+            <p class="text-indigo-200 mt-2">Explore the dynamics of a frictionless pendulum and compare numerical (Runge-Kutta) solutions with small-angle analytical approximations.</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Animation & Controls -->
+        <div class="lg:col-span-5 flex flex-col gap-6">
+            
+            <!-- Animation Container -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col items-center">
+                <h2 class="text-xl font-semibold mb-4 w-full text-left">Animation</h2>
+                <div class="w-full aspect-square bg-slate-50 rounded-lg border border-slate-100 overflow-hidden relative">
+                    <canvas id="pendulumCanvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Controls Container -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 class="text-xl font-semibold mb-4">Parameters</h2>
+                
+                <div class="space-y-5">
+                    <!-- Mass Slider -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label for="massSlider" class="text-sm font-medium text-slate-700">Mass (kg)</label>
+                            <span id="massValue" class="text-sm text-indigo-600 font-mono font-medium">1.0</span>
+                        </div>
+                        <input type="range" id="massSlider" min="0.1" max="10" step="0.1" value="1" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    </div>
+
+                    <!-- Length Slider -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label for="lengthSlider" class="text-sm font-medium text-slate-700">Length (m)</label>
+                            <span id="lengthValue" class="text-sm text-indigo-600 font-mono font-medium">2.0</span>
+                        </div>
+                        <input type="range" id="lengthSlider" min="0.5" max="5" step="0.1" value="2" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    </div>
+
+                    <!-- Initial Angle Slider -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label for="angleSlider" class="text-sm font-medium text-slate-700">Initial Angle (rad)</label>
+                            <span id="angleValue" class="text-sm text-indigo-600 font-mono font-medium">0.05</span>
+                        </div>
+                        <input type="range" id="angleSlider" min="-0.7" max="0.7" step="0.01" value="0.05" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    </div>
+
+                    <!-- Initial Angular Velocity Slider -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label for="velSlider" class="text-sm font-medium text-slate-700">Initial Angular Velocity (rad/s)</label>
+                            <span id="velValue" class="text-sm text-indigo-600 font-mono font-medium">0.00</span>
+                        </div>
+                        <input type="range" id="velSlider" min="-0.3" max="0.3" step="0.01" value="0" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    </div>
+                </div>
+
+                <hr class="my-6 border-slate-200">
+
+                <!-- Simulation Controls -->
+                <h2 class="text-xl font-semibold mb-4">Simulation Controls</h2>
+                <div class="flex flex-wrap gap-3">
+                    <button id="startBtn" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">Start</button>
+                    <button id="pauseBtn" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-sm disabled:opacity-50" disabled>Pause</button>
+                    <button id="restartBtn" class="flex-1 bg-slate-500 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">Restart</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Graphs -->
+        <div class="lg:col-span-7 flex flex-col gap-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 h-full flex flex-col">
+                <h2 class="text-xl font-semibold mb-4">Angle vs. Time Graph</h2>
+                <div class="flex-grow w-full relative min-h-[400px]">
+                    <canvas id="graphCanvas" class="absolute inset-0 w-full h-full"></canvas>
+                </div>
+                <div class="mt-4 text-sm text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                    <p><strong>Educational Note:</strong> The nonlinear equation of motion is \(\ddot{\theta} = -\frac{g}{L} \sin(\theta)\). We solve this numerically using the 4th-order Runge-Kutta method. The analytical solution shown assumes \(\sin(\theta) \approx \theta\) (small angles).</p>
+                    <p class="mt-2 text-xs">As you increase the initial angle, notice how the numerical (true) solution gradually shifts out of phase with the analytical approximation due to the period's dependence on amplitude.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- 1. Simulation State & Constants ---
+        const g = 9.81; // Gravity (m/s^2)
+        
+        // Physics state
+        let state = {
+            m: 1.0,     // Mass
+            L: 2.0,     // Length
+            th0: 0.05,  // Initial angle
+            w0: 0.0,    // Initial angular velocity
+            th: 0.05,   // Current angle
+            w: 0.0,     // Current angular velocity
+            t: 0.0      // Current time
+        };
+
+        // App state
+        let isRunning = false;
+        let lastTimestamp = 0;
+        let graphData = [];
+        const GRAPH_WINDOW_SECONDS = 15; // How much time to show on the graph
+        
+        // --- 2. DOM Elements Setup ---
+        const ui = {
+            canvasPend: document.getElementById('pendulumCanvas'),
+            canvasGraph: document.getElementById('graphCanvas'),
+            ctxPend: document.getElementById('pendulumCanvas').getContext('2d'),
+            ctxGraph: document.getElementById('graphCanvas').getContext('2d'),
+            
+            // Sliders & Values
+            sMass: document.getElementById('massSlider'),
+            vMass: document.getElementById('massValue'),
+            sLength: document.getElementById('lengthSlider'),
+            vLength: document.getElementById('lengthValue'),
+            sAngle: document.getElementById('angleSlider'),
+            vAngle: document.getElementById('angleValue'),
+            sVel: document.getElementById('velSlider'),
+            vVel: document.getElementById('velValue'),
+            
+            // Buttons
+            btnStart: document.getElementById('startBtn'),
+            btnPause: document.getElementById('pauseBtn'),
+            btnRestart: document.getElementById('restartBtn')
+        };
+
+        // Handle high DPI displays for crisp canvas rendering
+        function resizeCanvases() {
+            const dpr = window.devicePixelRatio || 1;
+            
+            // Pendulum Canvas
+            const rectP = ui.canvasPend.parentElement.getBoundingClientRect();
+            ui.canvasPend.width = rectP.width * dpr;
+            ui.canvasPend.height = rectP.height * dpr;
+            ui.ctxPend.scale(dpr, dpr);
+            ui.canvasPend.style.width = `${rectP.width}px`;
+            ui.canvasPend.style.height = `${rectP.height}px`;
+
+            // Graph Canvas
+            const rectG = ui.canvasGraph.parentElement.getBoundingClientRect();
+            ui.canvasGraph.width = rectG.width * dpr;
+            ui.canvasGraph.height = rectG.height * dpr;
+            ui.ctxGraph.scale(dpr, dpr);
+            ui.canvasGraph.style.width = `${rectG.width}px`;
+            ui.canvasGraph.style.height = `${rectG.height}px`;
+
+            drawPendulum();
+            drawGraph();
+        }
+        window.addEventListener('resize', resizeCanvases);
+
+        // --- 3. Physics Engine (Runge-Kutta 4) ---
+
+        // The derivative function for the ODE system: [d(theta)/dt, d(omega)/dt]
+        // y is state vector [theta, omega]
+        function getDerivatives(y, L) {
+            return [
+                y[1],                       // d(theta)/dt = omega
+                -(g / L) * Math.sin(y[0])   // d(omega)/dt = -(g/L) * sin(theta)
+            ];
+        }
+
+        // Performs one RK4 step
+        function stepRK4(dt) {
+            // Maximum dt per physics step to ensure stability
+            const maxDt = 0.01; 
+            let remainingTime = dt;
+
+            // Sub-stepping for stability if frame dt is too large
+            while (remainingTime > 0) {
+                let step = Math.min(remainingTime, maxDt);
+                let y = [state.th, state.w];
+                
+                let k1 = getDerivatives(y, state.L);
+                
+                let y2 = [y[0] + 0.5 * step * k1[0], y[1] + 0.5 * step * k1[1]];
+                let k2 = getDerivatives(y2, state.L);
+                
+                let y3 = [y[0] + 0.5 * step * k2[0], y[1] + 0.5 * step * k2[1]];
+                let k3 = getDerivatives(y3, state.L);
+                
+                let y4 = [y[0] + step * k3[0], y[1] + step * k3[1]];
+                let k4 = getDerivatives(y4, state.L);
+
+                state.th += (step / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+                state.w  += (step / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+                state.t  += step;
+                
+                remainingTime -= step;
+            }
+        }
+
+        // Analytical solution for small angles: theta(t) = th0*cos(wt) + (w0/w)*sin(wt)
+        function getAnalyticalTheta(t) {
+            const wn = Math.sqrt(g / state.L); // Natural frequency
+            return state.th0 * Math.cos(wn * t) + (state.w0 / wn) * Math.sin(wn * t);
+        }
+
+        // --- 4. Rendering logic ---
+
+        function drawPendulum() {
+            const ctx = ui.ctxPend;
+            const width = ui.canvasPend.parentElement.clientWidth;
+            const height = ui.canvasPend.parentElement.clientHeight;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            // Pivot coordinates
+            const pivotX = width / 2;
+            const pivotY = height * 0.1;
+            
+            // Calculate scale based on max possible length (5m) to ensure it fits
+            const scale = (height * 0.8) / 5; 
+            
+            // Current position
+            const x = pivotX + scale * state.L * Math.sin(state.th);
+            const y = pivotY + scale * state.L * Math.cos(state.th);
+            
+            // Bob radius based on mass (visually scaled)
+            const bobRadius = 10 + Math.sqrt(state.m) * 5;
+
+            // Draw ceiling mount
+            ctx.beginPath();
+            ctx.moveTo(pivotX - 30, pivotY);
+            ctx.lineTo(pivotX + 30, pivotY);
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#475569';
+            ctx.stroke();
+
+            // Draw string
+            ctx.beginPath();
+            ctx.moveTo(pivotX, pivotY);
+            ctx.lineTo(x, y);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#94a3b8';
+            ctx.stroke();
+
+            // Draw pivot point
+            ctx.beginPath();
+            ctx.arc(pivotX, pivotY, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = '#1e293b';
+            ctx.fill();
+
+            // Draw bob
+            ctx.beginPath();
+            ctx.arc(x, y, bobRadius, 0, 2 * Math.PI);
+            
+            // Add gradient to bob for 3D effect
+            const gradient = ctx.createRadialGradient(x - bobRadius*0.3, y - bobRadius*0.3, bobRadius*0.1, x, y, bobRadius);
+            gradient.addColorStop(0, '#818cf8');
+            gradient.addColorStop(1, '#4f46e5');
+            
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#3730a3';
+            ctx.stroke();
+        }
+
+        function drawGraph() {
+            const ctx = ui.ctxGraph;
+            const width = ui.canvasGraph.parentElement.clientWidth;
+            const height = ui.canvasGraph.parentElement.clientHeight;
+            
+            ctx.clearRect(0, 0, width, height);
+
+            const padding = { top: 40, right: 30, bottom: 40, left: 60 };
+            const graphWidth = width - padding.left - padding.right;
+            const graphHeight = height - padding.top - padding.bottom;
+
+            // Determine time window bounds
+            const maxT = Math.max(GRAPH_WINDOW_SECONDS, state.t);
+            const minT = Math.max(0, maxT - GRAPH_WINDOW_SECONDS);
+
+            // Determine Y range dynamically based on max initial values seen, with a minimum padding
+            // Max theoretical angle in simulation setup is ~0.8 rad, let's pad it.
+            let maxAngle = 0.8; // Default fixed scale for visual consistency
+            const yMin = -maxAngle;
+            const yMax = maxAngle;
+
+            // Helper to map values to pixel coordinates
+            const mapX = (t) => padding.left + ((t - minT) / (maxT - minT)) * graphWidth;
+            const mapY = (th) => padding.top + graphHeight - ((th - yMin) / (yMax - yMin)) * graphHeight;
+
+            // Draw Axes
+            ctx.beginPath();
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            // Y-axis
+            ctx.moveTo(padding.left, padding.top);
+            ctx.lineTo(padding.left, height - padding.bottom);
+            // X-axis (zero line)
+            const yZero = mapY(0);
+            ctx.moveTo(padding.left, yZero);
+            ctx.lineTo(width - padding.right, yZero);
+            ctx.stroke();
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+
+            // Y-axis Ticks
+            const yTicks = [-0.6, -0.3, 0, 0.3, 0.6];
+            yTicks.forEach(tick => {
+                const yPos = mapY(tick);
+                ctx.beginPath();
+                ctx.moveTo(padding.left - 5, yPos);
+                ctx.lineTo(padding.left, yPos);
+                ctx.stroke();
+                ctx.fillText(tick.toFixed(1), padding.left - 10, yPos);
+            });
+            // Y-axis label
+            ctx.save();
+            ctx.translate(15, height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = 'center';
+            ctx.fillText('Angle (rad)', 0, 0);
+            ctx.restore();
+
+            // X-axis Ticks (dynamic based on time window)
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const tickInterval = 2; // Tick every 2 seconds
+            let firstTick = Math.ceil(minT / tickInterval) * tickInterval;
+            for (let t = firstTick; t <= maxT; t += tickInterval) {
+                const xPos = mapX(t);
+                ctx.beginPath();
+                ctx.moveTo(xPos, yZero - 4);
+                ctx.lineTo(xPos, yZero + 4);
+                ctx.stroke();
+                ctx.fillText(t.toFixed(0), xPos, yZero + 8);
+            }
+            // X-axis label
+            ctx.fillText('Time (s)', padding.left + graphWidth / 2, height - 20);
+
+            // Filter data within current window
+            const visibleData = graphData.filter(d => d.t >= minT && d.t <= maxT);
+
+            if (visibleData.length > 1) {
+                // Draw Analytical Line (Dashed, Amber)
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(245, 158, 11, 0.8)'; // amber-500
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.moveTo(mapX(visibleData[0].t), mapY(visibleData[0].ana));
+                for (let i = 1; i < visibleData.length; i++) {
+                    ctx.lineTo(mapX(visibleData[i].t), mapY(visibleData[i].ana));
+                }
+                ctx.stroke();
+                ctx.setLineDash([]); // reset
+
+                // Draw Numerical Line (Solid, Indigo)
+                ctx.beginPath();
+                ctx.strokeStyle = '#4f46e5'; // indigo-600
+                ctx.lineWidth = 2.5;
+                ctx.moveTo(mapX(visibleData[0].t), mapY(visibleData[0].num));
+                for (let i = 1; i < visibleData.length; i++) {
+                    ctx.lineTo(mapX(visibleData[i].t), mapY(visibleData[i].num));
+                }
+                ctx.stroke();
+            }
+
+            // Legend
+            const legendX = padding.left + 20;
+            const legendY = padding.top - 20;
+            
+            // Legend Num
+            ctx.beginPath();
+            ctx.moveTo(legendX, legendY);
+            ctx.lineTo(legendX + 20, legendY);
+            ctx.strokeStyle = '#4f46e5';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#334155';
+            ctx.fillText('Numerical (RK4)', legendX + 25, legendY);
+
+            // Legend Ana
+            const legendX2 = legendX + 130;
+            ctx.beginPath();
+            ctx.moveTo(legendX2, legendY);
+            ctx.lineTo(legendX2 + 20, legendY);
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillText('Analytical (Small Angle)', legendX2 + 25, legendY);
+        }
+
+        // --- 5. App Flow & Event Handlers ---
+
+        function updateStateFromInputs() {
+            state.m = parseFloat(ui.sMass.value);
+            state.L = parseFloat(ui.sLength.value);
+            state.th0 = parseFloat(ui.sAngle.value);
+            state.w0 = parseFloat(ui.sVel.value);
+            
+            // Update labels
+            ui.vMass.textContent = state.m.toFixed(1);
+            ui.vLength.textContent = state.L.toFixed(1);
+            ui.vAngle.textContent = state.th0.toFixed(2);
+            ui.vVel.textContent = state.w0.toFixed(2);
+        }
+
+        function resetSimulation() {
+            updateStateFromInputs();
+            state.th = state.th0;
+            state.w = state.w0;
+            state.t = 0;
+            graphData = [];
+            // Record initial point
+            graphData.push({ t: state.t, num: state.th, ana: getAnalyticalTheta(state.t) });
+            
+            drawPendulum();
+            drawGraph();
+        }
+
+        function animationLoop(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dt = (timestamp - lastTimestamp) / 1000; // convert to seconds
+            lastTimestamp = timestamp;
+
+            if (isRunning) {
+                // Prevent spiraling out of control if tab is inactive for a long time
+                const maxAllowedDt = 0.1;
+                const safeDt = Math.min(dt, maxAllowedDt);
+                
+                stepRK4(safeDt);
+                
+                // Save data for graphing (cap array size to prevent memory leaks if left running forever)
+                graphData.push({
+                    t: state.t,
+                    num: state.th,
+                    ana: getAnalyticalTheta(state.t)
+                });
+
+                // Clean up old graph data outside window to save memory
+                const cleanupThreshold = state.t - (GRAPH_WINDOW_SECONDS * 1.5);
+                while(graphData.length > 0 && graphData[0].t < cleanupThreshold) {
+                    graphData.shift();
+                }
+
+                drawPendulum();
+                drawGraph();
+            }
+
+            requestAnimationFrame(animationLoop);
+        }
+
+        // --- Event Listeners ---
+
+        // Sliders: Update immediately and reset state
+        [ui.sMass, ui.sLength, ui.sAngle, ui.sVel].forEach(slider => {
+            slider.addEventListener('input', () => {
+                resetSimulation();
+                // If running, it's generally better UX to pause when dragging sliders to see initial state
+                if (isRunning) {
+                    isRunning = false;
+                    ui.btnStart.disabled = false;
+                    ui.btnPause.disabled = true;
+                }
+            });
+        });
+
+        // Buttons
+        ui.btnStart.addEventListener('click', () => {
+            isRunning = true;
+            lastTimestamp = performance.now(); // Reset timestamp to prevent massive jump
+            ui.btnStart.disabled = true;
+            ui.btnPause.disabled = false;
+        });
+
+        ui.btnPause.addEventListener('click', () => {
+            isRunning = false;
+            ui.btnStart.disabled = false;
+            ui.btnPause.disabled = true;
+        });
+
+        ui.btnRestart.addEventListener('click', () => {
+            isRunning = false;
+            ui.btnStart.disabled = false;
+            ui.btnPause.disabled = true;
+            resetSimulation();
+        });
+
+        // --- Initialization ---
+        // Let fonts load briefly before initial render layout
+        setTimeout(() => {
+            resizeCanvases();
+            resetSimulation();
+            requestAnimationFrame(animationLoop);
+        }, 50);
+
+    </script>
+</body>
+</html>
